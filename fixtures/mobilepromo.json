@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "category": "\u041c\u043e\u043b\u043e\u0447\u043d\u0430\u044f \u043f\u0440\u043e\u0434\u0443\u043a\u0446\u0438\u044f",
+      "name": "\u0419\u043e\u0433\u0443\u0440\u0442 \u043a\u043b\u0443\u0431\u043d\u0438\u0447\u043d\u044b\u0439",
+      "currentPrice": "74.90",
+      "link": "/product/yogurt"
+    },
+    {
+      "category": "\u0425\u043b\u0435\u0431\u043e\u0431\u0443\u043b\u043e\u0447\u043d\u044b\u0435 \u0438\u0437\u0434\u0435\u043b\u0438\u044f",
+      "name": "\u0411\u0443\u043b\u043e\u0447\u043a\u0430 \u0441 \u043c\u0430\u043a\u043e\u043c",
+      "currentPrice": "39.99",
+      "link": "/product/bulochka"
+    }
+  ]
+}

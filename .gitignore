@@ -1,0 +1,5 @@
+*.exe
+products*.jsonl
+run-*.jsonl
+# Не коммитить живые сессии
+cookie.txt
