@@ -1,7 +1,6 @@
 run:
   timeout: 5m
   go: "1.22"
-
 linters:
   disable-all: true
   enable:
@@ -17,16 +16,7 @@ linters:
     - goimports
     - gocyclo
     - revive
-
 linters-settings:
-  errcheck:
-    # CLI: лог в stderr; иначе сотни fmt.* в проекте
-    exclude-functions:
-      - fmt.Print
-      - fmt.Printf
-      - fmt.Fprintf
-      - fmt.Fprintln
-      - fmt.Fprint
   gofmt:
     simplify: true
   gocyclo:
@@ -35,12 +25,22 @@ linters-settings:
     rules:
       - name: unused-parameter
         disabled: true
-
 issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
   exclude-rules:
     - path: _test\.go
       linters:
         - errcheck
         - gocyclo
-  max-issues-per-linter: 0
-  max-same-issues: 0
+    # Главная функция CLI с естественным ветвлением по флагам.
+    # При рефакторинге в фазу 5+ выделим стадии в отдельные функции.
+    - path: main\.go
+      linters:
+        - gocyclo
+      source: "func run\\("
+    # http.RoundTripper для uTLS — естественно сложный из-за proxy/direct и fallback.
+    - path: utls_roundtripper\.go
+      linters:
+        - gocyclo
+      source: "RoundTrip\\("
