@@ -322,7 +322,9 @@ func writeJSONL(path string, items []Product, minimal bool) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close() //nolint:errcheck // при ошибке Encode файл уже неконсистентен; закрытие best-effort
+	}()
 	enc := json.NewEncoder(f)
 	enc.SetEscapeHTML(false)
 	if minimal {
@@ -384,7 +386,10 @@ func toInt(v any) int {
 	case int:
 		return x
 	case string:
-		n, _ := strconv.Atoi(x)
+		n, err := strconv.Atoi(x)
+		if err != nil {
+			return 0
+		}
 		return n
 	default:
 		return 0
@@ -398,7 +403,10 @@ func toFloat(v any) float64 {
 	case int:
 		return float64(x)
 	case string:
-		n, _ := strconv.ParseFloat(x, 64)
+		n, err := strconv.ParseFloat(x, 64)
+		if err != nil {
+			return 0
+		}
 		return n
 	default:
 		return 0

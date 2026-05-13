@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +19,23 @@ import (
 
 // chromeDirectBypassNotice — однократное сообщение о прямом TCP в режиме chrome-tls + loopback-прокси.
 var chromeDirectBypassNotice sync.Once
+
+// closeConn закрывает сокет best-effort (ошибки не пробрасываем вверх по стеку).
+func closeConn(c net.Conn) {
+	if c == nil {
+		return
+	}
+	_ = c.Close() //nolint:errcheck
+}
+
+// drainAndClose сбрасывает тело ответа CONNECT и закрывает его.
+func drainAndClose(resp *http.Response) {
+	if resp == nil || resp.Body == nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, resp.Body) //nolint:errcheck
+	_ = resp.Body.Close()                 //nolint:errcheck
+}
 
 // prefixConn отдаёт сначала буфер после CONNECT-ответа, затем базовое соединение.
 type prefixConn struct {
@@ -41,9 +59,7 @@ type utlsBody struct {
 }
 
 func (b *utlsBody) Close() error {
-	err := b.ReadCloser.Close()
-	_ = b.tcp.Close()
-	return err
+	return errors.Join(b.ReadCloser.Close(), b.tcp.Close())
 }
 
 // utlsProxyRT — HTTPS с ClientHello как у Chrome (uTLS). Либо CONNECT через HTTP-прокси, либо прямой TCP (см. directLoopback).
@@ -132,35 +148,33 @@ func (t *utlsProxyRT) RoundTrip(req *http.Request) (*http.Response, error) {
 			connect = fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", connectHost, connectHost)
 		}
 		if _, err := io.WriteString(raw, connect); err != nil {
-			raw.Close()
+			closeConn(raw)
 			return nil, fmt.Errorf("utls-proxy: CONNECT: %w", err)
 		}
 
 		br := bufio.NewReader(raw)
 		resp, err := http.ReadResponse(br, &http.Request{Method: http.MethodConnect})
 		if err != nil {
-			raw.Close()
+			closeConn(raw)
 			return nil, fmt.Errorf("utls-proxy: ответ CONNECT: %w", err)
 		}
 		if resp.StatusCode != http.StatusOK {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			_ = resp.Body.Close()
-			raw.Close()
+			drainAndClose(resp)
+			closeConn(raw)
 			return nil, fmt.Errorf("utls-proxy: CONNECT %s", resp.Status)
 		}
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
+		drainAndClose(resp)
 
 		if br.Buffered() > 0 {
 			prefix = make([]byte, br.Buffered())
 			if _, err := io.ReadFull(br, prefix); err != nil {
-				raw.Close()
+				closeConn(raw)
 				return nil, fmt.Errorf("utls-proxy: буфер после CONNECT: %w", err)
 			}
 		}
 	}
 
-	_ = raw.SetDeadline(time.Now().Add(40 * time.Second))
+	_ = raw.SetDeadline(time.Now().Add(40 * time.Second)) //nolint:errcheck
 	return utlsThenHTTP(ctx, raw, prefix, req)
 }
 
@@ -175,41 +189,41 @@ func utlsThenHTTP(ctx context.Context, raw net.Conn, prefix []byte, req *http.Re
 	cfg := &utls.Config{ServerName: req.URL.Hostname()}
 	spec, err := buildChromeHTTP11ClientHelloSpec()
 	if err != nil {
-		raw.Close()
+		closeConn(raw)
 		return nil, fmt.Errorf("utls: spec: %w", err)
 	}
 	uconn := utls.UClient(pconn, cfg, utls.HelloCustom)
 	if err := uconn.ApplyPreset(spec); err != nil {
-		raw.Close()
+		closeConn(raw)
 		return nil, fmt.Errorf("utls: ApplyPreset: %w", err)
 	}
 	if err := uconn.HandshakeContext(ctx); err != nil {
-		raw.Close()
+		closeConn(raw)
 		return nil, fmt.Errorf("utls: TLS: %w", err)
 	}
 	fmt.Fprintln(os.Stderr, "[utls] TLS handshake OK")
 	if np := uconn.ConnectionState().NegotiatedProtocol; np != "" && np != "http/1.1" {
-		raw.Close()
+		closeConn(raw)
 		return nil, fmt.Errorf("utls: после рукопожатия ALPN=%q (ожидался http/1.1)", np)
 	}
 
 	req2 := req.Clone(ctx)
 	req2.Close = true
 	if err := req2.Write(uconn); err != nil {
-		raw.Close()
+		closeConn(raw)
 		return nil, fmt.Errorf("utls: запись запроса: %w", err)
 	}
-	_ = raw.SetDeadline(time.Now().Add(40 * time.Second))
+	_ = raw.SetDeadline(time.Now().Add(40 * time.Second)) //nolint:errcheck
 
 	res, err := http.ReadResponse(bufio.NewReader(uconn), req2)
 	if err != nil {
-		raw.Close()
+		closeConn(raw)
 		return nil, fmt.Errorf("utls: чтение ответа: %w", err)
 	}
 	if res.Body != nil {
 		res.Body = &utlsBody{ReadCloser: res.Body, tcp: raw}
 	} else {
-		_ = raw.Close()
+		closeConn(raw)
 	}
 	return res, nil
 }

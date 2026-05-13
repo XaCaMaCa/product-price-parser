@@ -20,7 +20,7 @@ func startLocalForwardProxy(addr string) (stop func(), proxyURL string, err erro
 	}
 	go acceptProxyLoop(ln)
 	stop = func() {
-		_ = ln.Close()
+		_ = ln.Close() //nolint:errcheck
 	}
 	// На Windows ln.Addr() для «любого интерфейса» может быть 0.0.0.0:port — тогда dial на 127.0.0.1 не попадает в слушатель.
 	return stop, formatLocalProxyHTTPURL(ln.Addr()), nil
@@ -51,9 +51,11 @@ func formatLocalProxyHTTPURL(addr net.Addr) string {
 }
 
 func handleProxyConn(client net.Conn) {
-	defer client.Close()
+	defer func() {
+		_ = client.Close() //nolint:errcheck
+	}()
 	// Дедлайн на весь туннель: каталог и TLS могут быть дольше минуты.
-	_ = client.SetDeadline(time.Now().Add(10 * time.Minute))
+	_ = client.SetDeadline(time.Now().Add(10 * time.Minute)) //nolint:errcheck
 
 	br := bufio.NewReader(client)
 	req, err := http.ReadRequest(br)
@@ -61,11 +63,11 @@ func handleProxyConn(client net.Conn) {
 		return
 	}
 	if req.Body != nil {
-		_ = req.Body.Close()
+		_ = req.Body.Close() //nolint:errcheck
 	}
 	if req.Method != http.MethodConnect {
 		// Для этого задания достаточно CONNECT (HTTPS через прокси).
-		_, _ = fmt.Fprintf(client, "HTTP/1.1 501 Not Implemented\r\n\r\n")
+		_, _ = fmt.Fprintf(client, "HTTP/1.1 501 Not Implemented\r\n\r\n") //nolint:errcheck
 		return
 	}
 	host := req.Host
@@ -74,12 +76,14 @@ func handleProxyConn(client net.Conn) {
 	}
 	dest, err := net.DialTimeout("tcp", host, 30*time.Second)
 	if err != nil {
-		_, _ = fmt.Fprintf(client, "HTTP/1.1 502 Bad Gateway\r\n\r\n")
+		_, _ = fmt.Fprintf(client, "HTTP/1.1 502 Bad Gateway\r\n\r\n") //nolint:errcheck
 		return
 	}
-	defer dest.Close()
-	_ = dest.SetDeadline(time.Now().Add(10 * time.Minute))
-	_, _ = fmt.Fprintf(client, "HTTP/1.1 200 Connection established\r\n\r\n")
+	defer func() {
+		_ = dest.Close() //nolint:errcheck
+	}()
+	_ = dest.SetDeadline(time.Now().Add(10 * time.Minute))                    //nolint:errcheck
+	_, _ = fmt.Fprintf(client, "HTTP/1.1 200 Connection established\r\n\r\n") //nolint:errcheck
 
 	// Два направления параллельно. Нельзя закрывать dest в одной горутине по EOF br —
 	// иначе второе направление (ответ TLS с апстрима) обрывается (wsarecv / connection aborted).
@@ -87,11 +91,11 @@ func handleProxyConn(client net.Conn) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(dest, br)
+		_, _ = io.Copy(dest, br) //nolint:errcheck
 	}()
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(client, dest)
+		_, _ = io.Copy(client, dest) //nolint:errcheck
 	}()
 	wg.Wait()
 }

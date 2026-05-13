@@ -266,7 +266,9 @@ func (a *lentaAPI) getJSON(ctx context.Context, link string) (map[string]any, er
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close() //nolint:errcheck
+	}()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err

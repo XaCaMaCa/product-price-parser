@@ -19,6 +19,14 @@ linters:
     - revive
 
 linters-settings:
+  errcheck:
+    # CLI: лог в stderr; иначе сотни fmt.* в проекте
+    exclude-functions:
+      - fmt.Print
+      - fmt.Printf
+      - fmt.Fprintf
+      - fmt.Fprintln
+      - fmt.Fprint
   gofmt:
     simplify: true
   gocyclo:
