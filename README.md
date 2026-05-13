@@ -1,8 +1,49 @@
 # product-price-parser
 
+[![CI](https://github.com/XaCaMaCa/product-price-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/XaCaMaCa/product-price-parser/actions/workflows/ci.yml)
+[![Go Version](https://img.shields.io/badge/go-1.22-blue.svg)](https://go.dev/)
+
 “естовое на Go-разработчика: консольна€ утилита, котора€ тащит **lenta.com** не через селекторы по HTML, а через **JSON с их API** Ч так проще пережить смену вЄрстки. ¬ “« ещЄ были прокси, выбор магазина, категории; с Qratorом пришлось возитьс€: куки, нормальные заголовки, при необходимости uTLS (ClientHello как у Chrome).
 
 ѕо файлам: `main.go` Ч флаги, разбор JSON в товары, JSONL; `lenta.go` Ч запросы к API, магазин; `client.go` Ч HTTP, редиректы `www`?apex; `localproxy.go` и `utls_roundtripper.go` Ч прокси и TLS.
+
+### јрхитектура
+
+```mermaid
+flowchart LR
+    CLI[main.go<br/>CLI flags] --> Lenta[lenta.go<br/>Lenta scraper]
+    Lenta --> Client[client.go<br/>http.Client]
+    Client --> RT{Transport}
+    RT -->|chrome-tls| UTLS[utls_roundtripper.go<br/>uTLS Chrome ClientHello]
+    RT -->|standard| Default[http.DefaultTransport]
+    UTLS --> Proxy[localproxy.go<br/>CONNECT or direct]
+    UTLS --> Target[lenta.com<br/>JSON API]
+    Default --> Target
+    Lenta --> Out[products.jsonl]
+```
+
+### ѕоток обхода защиты
+
+```mermaid
+sequenceDiagram
+    participant CLI
+    participant Lenta
+    participant UTLS as utlsProxyRT
+    participant Proxy
+    participant Target as lenta.com
+
+    CLI->>Lenta: запрос категорий
+    Lenta->>UTLS: GET /api/...
+    UTLS->>Proxy: CONNECT host:443
+    Proxy-->>UTLS: 200 Connection Established
+    UTLS->>Target: TLS ClientHello (Chrome fingerprint)
+    Target-->>UTLS: TLS handshake OK
+    UTLS->>Target: HTTPS GET /api/...
+    Target-->>UTLS: JSON
+    UTLS-->>Lenta: response
+    Lenta->>Lenta: parse + dedup
+    Lenta-->>CLI: write to products.jsonl
+```
 
 ## —борка
 
